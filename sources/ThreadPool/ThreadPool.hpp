@@ -120,7 +120,6 @@ public:
         LambdaType&& lambda
     )
     {
-        ::std::cout << "hello?" << ::std::endl;
         auto runnersSize{ m_runners.size() };
         auto lastSize{ m_runners[runnersSize - 1].size() };
 

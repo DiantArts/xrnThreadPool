@@ -95,13 +95,16 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     void runner()
     {
-        while (m_isRunning && !m_exitWhenDone) {
+        while (m_isRunning) {
             std::unique_lock lock{ m_mutex };
             if (m_pJobQueue.empty()) {
+                if (m_exitWhenDone) {
+                    break;
+                }
                 m_cv.wait(lock, [this]{ return !m_pJobQueue.empty() || !m_isRunning; });
             }
 
-            if (m_isRunning && !m_exitWhenDone) {
+            if (m_isRunning) {
                 do {
                     m_pJobQueue.front()->run();
                     m_pJobQueue.pop();
