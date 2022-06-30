@@ -29,11 +29,11 @@ jobs:
             os: ubuntu-22.04,
             cc: 'gcc-11', cxx: 'g++-11'
           }
-          # - {
-          # name: 'ubuntu-latest-clang',
-          # os: ubuntu-latest,
-          # cc: 'clang-13', cxx: 'clang++-13'
-          # }
+          - {
+            name: 'ubuntu-latest-clang',
+            os: ubuntu-latest,
+            cc: 'clang-13', cxx: 'clang++-13'
+          }
           #- {
           #  name: 'windows-latest-msvc',
           #  os: windows-latest,
