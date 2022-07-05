@@ -1,35 +1,16 @@
 #pragma once
 
-#include <ThreadPool/Runner.hpp>
+#include <Scheduler/Job.hpp>
 
-namespace xrn {
+namespace xrn::scheduler {
 
 ///////////////////////////////////////////////////////////////////////////
-/// \brief Runs function in parallel
+/// \brief Contains a thread that can run things
 ///
-/// \include ThreadPool.hpp <ThreadPool.hpp>
+/// \include Runner.hpp <Runner.hpp>
 ///
 ///////////////////////////////////////////////////////////////////////////
-class ThreadPool {
-
-public:
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-    // Configuration
-    //
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    /// \brief Configure a function call pattern
-    ///
-    /// latency: time between each calls in milliseconds
-    ///
-    ///////////////////////////////////////////////////////////////////////////
-    struct Configuration {
-        float latency;
-    };
+class Runner {
 
 public:
 
@@ -44,11 +25,7 @@ public:
     /// \brief Default constructor
     ///
     ///////////////////////////////////////////////////////////////////////////
-    explicit ThreadPool(
-        ::std::uint8_t numberOfThread = 8
-    )
-        : m_runners{ numberOfThread }
-    {}
+    explicit Runner() = default;
 
 
 
@@ -63,14 +40,14 @@ public:
     /// \brief Destructor
     ///
     ///////////////////////////////////////////////////////////////////////////
-    ~ThreadPool() = default;
+    ~Runner() = default;
 
     ///////////////////////////////////////////////////////////////////////////
     /// \brief Copy constructor
     ///
     ///////////////////////////////////////////////////////////////////////////
-    ThreadPool(
-        const ThreadPool& other
+    Runner(
+        const Runner& other
     ) noexcept = delete;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -78,32 +55,32 @@ public:
     ///
     ///////////////////////////////////////////////////////////////////////////
     auto operator=(
-        const ThreadPool& other
+        const Runner& other
     ) noexcept
-        -> ThreadPool& = delete;
+        -> Runner& = delete;
 
     ///////////////////////////////////////////////////////////////////////////
     /// \brief Move constructor
     ///
     ///////////////////////////////////////////////////////////////////////////
-    ThreadPool(
-        ThreadPool&& other
-    ) noexcept = default;
+    Runner(
+        Runner&& other
+    ) noexcept;
 
     ///////////////////////////////////////////////////////////////////////////
     /// \brief Move assign operator
     ///
     ///////////////////////////////////////////////////////////////////////////
     auto operator=(
-        ThreadPool&& other
+        Runner&& other
     ) noexcept
-        -> ThreadPool& = default;
+        -> Runner&;
 
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////////
-    // Function managment
+    // Runner
     //
     ///////////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -114,47 +91,69 @@ public:
     /// The function will be executed with the configuration provided
     ///
     ///////////////////////////////////////////////////////////////////////////
-    template <
-        typename LambdaType
-    > void push(
-        LambdaType&& lambda
-    )
+    void runner()
     {
-        auto runnersSize{ m_runners.size() };
-        auto lastSize{ m_runners[runnersSize - 1].size() };
-
-        if (m_runners[0].size() == lastSize) {
-            m_runners[0].push(::std::make_unique<::xrn::Job<LambdaType>>(::std::move(lambda)));
-        } else if (m_runners[runnersSize / 2 - 1].size() == lastSize) {
-            for (
-                auto& runner :
-                ::std::span{ m_runners.begin(), m_runners.end() - (runnersSize / 2) }
-            ) {
-                if (runner.size() == lastSize) {
-                    runner.push(::std::make_unique<::xrn::Job<LambdaType>>(::std::move(lambda)));
+        while (true) {
+            std::unique_lock lock{ m_mutex };
+            if (!m_pJob) {
+                if (m_exitWhenDone) {
                     break;
                 }
+                m_cv.wait(lock, [this]{ return m_pJob || m_exitWhenDone; });
             }
-        } else {
-            for (
-                auto& runner :
-                ::std::span{ m_runners.begin() + (runnersSize / 2), m_runners.end() }
-            ) {
-                if (runner.size() == lastSize) {
-                    runner.push(::std::make_unique<::xrn::Job<LambdaType>>(::std::move(lambda)));
-                    break;
-                }
-            }
+            m_pJob->run();
+            m_pJob.reset();
         }
     }
 
+    ///////////////////////////////////////////////////////////////////////////
+    /// \brief Starts the runner
+    ///
+    ///////////////////////////////////////////////////////////////////////////
+    void start()
+    {
+        m_runner = ::std::thread{ &Runner::runner, this };
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// \brief Adds a function to the queue
+    ///
+    ///////////////////////////////////////////////////////////////////////////
+    void push(
+        ::std::shared_ptr<::xrn::scheduler::Job> pJob
+    )
+    {
+        m_pJob = pJob;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// \brief Adds a function to the queue
+    ///
+    ///////////////////////////////////////////////////////////////////////////
+    [[ nodiscard ]] auto isJobCompleted()
+        -> bool
+    {
+        return !m_pJob;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// \brief Will exit when done with all jobs
+    ///
+    ///////////////////////////////////////////////////////////////////////////
+    void exitWhenDone()
+    {
+        m_exitWhenDone = true;
+        m_cv.notify_one();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// \brief joins the thread
+    ///
+    ///////////////////////////////////////////////////////////////////////////
     void join()
     {
-        for (auto& runner : m_runners) {
-            runner.exitWhenDone();
-        }
-        for (auto& runner : m_runners) {
-            runner.join();
+        if (m_runner.joinable()) {
+            m_runner.join();
         }
     }
 
@@ -169,8 +168,17 @@ private:
     ///////////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    ::std::vector<::xrn::Runner> m_runners;
+    static inline ::std::atomic<::std::uint8_t> idGiver{ 0 };
+    ::std::uint8_t m_id{ idGiver++ };
+
+    ::std::thread m_runner;
+    ::std::mutex m_mutex;
+    ::std::condition_variable m_cv;
+
+    ::std::atomic<bool> m_exitWhenDone{ false };
+
+    ::std::shared_ptr<::xrn::scheduler::Job> m_pJob;
 
 };
 
-} // namespace xrn
+} // namespace xrn::scheduler

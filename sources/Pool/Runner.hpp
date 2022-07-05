@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Job.hpp>
+#include <Pool/Job.hpp>
 
-namespace xrn {
+namespace xrn::pool {
 
 ///////////////////////////////////////////////////////////////////////////
 /// \brief Contains a thread that can run things
@@ -97,18 +97,20 @@ public:
     {
         while (m_isRunning) {
             std::unique_lock lock{ m_mutex };
-            if (m_pJobQueue.empty()) {
+            if (m_pJobs.empty()) {
                 if (m_exitWhenDone) {
                     break;
                 }
-                m_cv.wait(lock, [this]{ return !m_pJobQueue.empty() || !m_isRunning; });
+                m_cv.wait(
+                    lock, [this]{ return !m_pJobs.empty() || !m_isRunning || m_exitWhenDone; }
+                );
             }
 
             if (m_isRunning) {
                 do {
-                    m_pJobQueue.front()->run();
-                    m_pJobQueue.pop();
-                } while (!m_pJobQueue.empty() && m_isRunning);
+                    m_pJobs.front()->run();
+                    m_pJobs.pop();
+                } while (!m_pJobs.empty() && m_isRunning);
             }
 
             lock.unlock();
@@ -120,10 +122,10 @@ public:
     ///
     ///////////////////////////////////////////////////////////////////////////
     void push(
-        ::std::unique_ptr<::xrn::IJob> job
+        ::std::unique_ptr<::xrn::pool::IJob> job
     )
     {
-        m_pJobQueue.push(::std::move(job));
+        m_pJobs.push(::std::move(job));
         m_cv.notify_one();
     }
 
@@ -134,7 +136,7 @@ public:
     [[ nodiscard ]] auto size()
         -> ::std::size_t
     {
-        return m_pJobQueue.size();
+        return m_pJobs.size();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -176,8 +178,8 @@ private:
     ::std::mutex m_mutex;
     ::std::condition_variable m_cv;
 
-    ::std::queue<::std::unique_ptr<::xrn::IJob>> m_pJobQueue;
+    ::std::queue<::std::unique_ptr<::xrn::pool::IJob>> m_pJobs;
 
 };
 
-} // namespace xrn
+} // namespace xrn::pool
